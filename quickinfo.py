@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 
-import gzip
 import sys
+import os
+import gzip
 import datetime
 
 
@@ -30,6 +31,10 @@ def getLevelName(buffer: bytes):
 
 def main():
     for filespec in sys.argv[1:]:
+        if not os.path.isfile(filespec):
+            print(f"{filespec} is not a valid file")
+            continue
+
         with gzip.open(filespec, "rb") as fd:
             buffer = fd.read()
             print(fd.name, len(buffer), "bytes")
@@ -67,4 +72,5 @@ def main():
             print()
 
 
-main()
+if __name__ == "__main__":
+    main()
