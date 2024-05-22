@@ -1,130 +1,161 @@
 #!/usr/bin/python3
 
-import gzip
 import sys
+import os
+import gzip
 import struct
 
+# tag ids
+TAG_End = 0x00
+TAG_Byte = 0x01
+TAG_Short = 0x02
+TAG_Int = 0x03
+TAG_Long = 0x04
+TAG_Float = 0x05
+TAG_Double = 0x06
+TAG_Byte_Array = 0x07
+TAG_String = 0x08
+TAG_List = 0x09
+TAG_Compound = 0x0A
+TAG_Int_Array = 0x0B
+TAG_Long_Array = 0x0C
 
-def getString(fd):
-    size = int.from_bytes(fd.read(2))
+
+def getString(buffer: bytes, pointer: int):
+    start = pointer
+    end = start + 2
+    size = int.from_bytes(buffer[start:end])
     if size:
-        return fd.read(size).decode()
-    return ""
+        start = end
+        end = end + size
+        return buffer[start:end].decode(), end
+    return "", end
 
 
-def getInt(fd, numbytes):
-    return int.from_bytes(fd.read(numbytes), signed=True)
+def getInt(buffer: bytes, pointer: int, numbytes: int):
+    start = pointer
+    end = start + numbytes
+    return int.from_bytes(buffer[start:end], signed=True), end
 
 
-def getFloat(fd):
-    val = struct.unpack("f", fd.read(4))
-    return val[0]
+def getFloat(buffer: bytes, pointer: int):
+    start = pointer
+    end = start + 4
+    val = struct.unpack(">f", buffer[start:end])
+    return val[0], end
 
 
-def getDouble(fd):
-    val = struct.unpack("d", fd.read(8))
-    return val[0]
+def getDouble(buffer: bytes, pointer: int):
+    start = pointer
+    end = start + 8
+    val = struct.unpack(">d", buffer[start:end])
+    return val[0], end
+
+
+def getHex(buffer: bytes, pointer: int, size: int):
+    start = pointer
+    end = start + size
+    return buffer[start:end].hex(), end
+
+
+def getList(buffer: bytes, pointer: int, items: int, func, size: int = None):
+    data = []
+    if size:
+        while items:
+            value, pointer = func(buffer, pointer, size)
+            data.append(value)
+            items -= 1
+    else:
+        while items:
+            value, pointer = func(buffer, pointer)
+            data.append(value)
+            items -= 1
+
+    return data, pointer
 
 
 def walktree(buffer: bytes):
-    badbyte = False
-    indentstr = "   -"
-    indent = 0
-    while not badbyte:
-        tagid = fd.read(1)
-        if len(tagid) < 1:
-            break
-        tagbyte = tagid[0]
+    buffersize = len(buffer)
+    pointer = 0
+    while pointer < buffersize:
+        tag = buffer[pointer]
+
         while True:
-            if tagbyte == 0x00:  # TAG_End
-                indent -= 1
+            if tag == TAG_End:
+                pointer += 1
+                # print("TAG_End")
                 break
-            if tagbyte == 0x01:  # TAG_Byte
-                name = getString(fd)
-                value = getInt(fd, 1)
-                print(indentstr * indent, name, value)
+
+            name, pointer = getString(buffer, pointer + 1)
+            if tag == TAG_Byte:
+                value, pointer = getInt(buffer, pointer, 1)
+                print(name, value)
                 break
-            if tagbyte == 0x02:  # TAG_Short
-                name = getString(fd)
-                value = getInt(fd, 2)
-                print(indentstr * indent, "TAG_Short", name, value)
+            if tag == TAG_Short:
+                value, pointer = getInt(buffer, pointer, 2)
+                print(name, value)
                 break
-            if tagbyte == 0x03:  # TAG_Int
-                name = getString(fd)
-                value = getInt(fd, 4)
-                print(indentstr * indent, name, value)
+            if tag == TAG_Int:
+                value, pointer = getInt(buffer, pointer, 4)
+                print(name, value)
                 break
-            if tagbyte == 0x04:  # TAG_Long
-                name = getString(fd)
-                value = getInt(fd, 8)
-                print(indentstr * indent, name, value)
+            if tag == TAG_Long:
+                value, pointer = getInt(buffer, pointer, 8)
+                print(name, value)
                 break
-            if tagbyte == 0x05:  # TAG_Float
-                name = getString(fd)
-                value = getFloat(fd)
-                print(indentstr * indent, "TAG_Float", name, value)
+            if tag == TAG_Float:
+                value, pointer = getFloat(buffer, pointer)
+                print(name, value)
                 break
-            if tagbyte == 0x06:  # TAG_Double
-                name = getString(fd)
-                value = getDouble(fd)
-                print(indentstr * indent, name, value)
+            if tag == TAG_Double:
+                value, pointer = getDouble(buffer, pointer)
+                print(name, value)
                 break
-            if tagbyte == 0x07:  # TAG_Byte_Array
-                name = getString(fd)
-                items = getInt(fd, 4)
-                value = fd.read(items).hex()
-                print(indentstr * indent, "TAG_Byte_Array", name, items, value)
+            if tag == TAG_Byte_Array:
+                print(name)
                 break
-            if tagbyte == 0x08:  # TAG_String
-                name = getString(fd)
-                value = getString(fd)
-                print(indentstr * indent, name, value)
+            if tag == TAG_String:
+                value, pointer = getString(buffer, pointer)
+                print(name, value)
                 break
-            if tagbyte == 0x09:  # TAG_List
-                name = getString(fd)
-                type = fd.read(1)[0]
-                items = getInt(fd, 4)
+            if tag == TAG_List:
+                type = buffer[pointer]
+                pointer += 1
+                items, pointer = getInt(buffer, pointer, 4)
                 data = ""
                 if type == 0x00:
-                    data = "nodata"
-                elif type == 0x03:
-                    data = fd.read(items * 4).hex()
-                elif type == 0x05:
-                    data = fd.read(items * 4).hex()
-                elif type == 0x06:
-                    data = fd.read(items * 8).hex()
-                elif type == 0x08:
-                    data = []
-                    cnt = items
-                    while cnt:
-                        data.append(getString(fd))
-                        cnt -= 1
-                print(indentstr * indent, "TAG_List", name, type, items, data)
+                    print("TAG_List", type, name, data)
+                elif type == TAG_Int:
+                    data, pointer = getList(buffer, pointer, items, getInt, 4)
+                    print(name, data)
+                elif type == TAG_Float:
+                    data, pointer = getList(buffer, pointer, items, getFloat)
+                    print(name, data)
+                elif type == TAG_Double:
+                    data, pointer = getList(buffer, pointer, items, getDouble)
+                    print(name, data)
+                elif type == TAG_String:
+                    data, pointer = getList(buffer, pointer, items, getString)
+                    print(name, data)
+                else:
+                    print("TAG_List", type, name, data)
                 break
-            if tagbyte == 0x0A:  # TAG_Compound
-                name = getString(fd)
-                print(indentstr * indent, name)
-                indent += 1
+            if tag == TAG_Compound:
+                print(name)
                 break
-            if tagbyte == 0x0B:  # TAG_Int_Array
-                name = getString(fd)
-                items = getInt(fd, 4)
-                value = fd.read(items * 4).hex()
-                print(indentstr * indent, "TAG_Int_Array", name, value)
+            if tag == TAG_Int_Array:
+                items, pointer = getInt(buffer, pointer, 4)
+                data, pointer = getList(buffer, pointer, items, getInt, 4)
+                print(name, data)
                 break
-            if tagbyte == 0x0C:  # TAG_Long_Array
-                name = getString(fd)
-                items = getInt(fd, 4)
-                value = fd.read(items * 8).hex()
-                print(indentstr * indent, "TAG_Long_Array", name, value)
+            if tag == TAG_Long_Array:
+                items, pointer = getInt(buffer, pointer, 4)
+                data, pointer = getList(buffer, pointer, items, getInt, 8)
+                print(name, data)
                 break
 
-            print("\nbad byte", tagid.hex(), fd.read(16).hex())
-            badbyte = True
-            break
-
-        # print("")
-    print("Endindent", indent)
+            print("debug", pointer, buffer[pointer:pointer].hex(), buffer[pointer - 10 : pointer + 10].hex())
+            return
 
 
 def main():
@@ -137,7 +168,8 @@ def main():
             buffer = fd.read()
             print(fd.name, len(buffer), "bytes")
             fd.close()
-            walktree()
+            walktree(buffer)
+            print()
 
 
 if __name__ == "__main__":

@@ -17,12 +17,12 @@ def getInt(fd, numbytes):
 
 
 def getFloat(fd):
-    val = struct.unpack("f", fd.read(4))
+    val = struct.unpack(">f", fd.read(4))
     return val[0]
 
 
 def getDouble(fd):
-    val = struct.unpack("d", fd.read(8))
+    val = struct.unpack(">d", fd.read(8))
     return val[0]
 
 
