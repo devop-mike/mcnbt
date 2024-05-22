@@ -58,18 +58,12 @@ def getHex(buffer: bytes, pointer: int, size: int):
     return buffer[start:end].hex(), end
 
 
-def getList(buffer: bytes, pointer: int, items: int, func, size: int = None):
+def getList(buffer: bytes, pointer: int, items: int, func: callable):
     data = []
-    if size:
-        while items:
-            value, pointer = func(buffer, pointer, size)
-            data.append(value)
-            items -= 1
-    else:
-        while items:
-            value, pointer = func(buffer, pointer)
-            data.append(value)
-            items -= 1
+    while items:
+        value, pointer = func(buffer, pointer)
+        data.append(value)
+        items -= 1
 
     return data, pointer
 
@@ -126,7 +120,7 @@ def walktree(buffer: bytes):
                 if type == 0x00:
                     print("TAG_List", type, name, data)
                 elif type == TAG_Int:
-                    data, pointer = getList(buffer, pointer, items, getInt, 4)
+                    data, pointer = getList(buffer, pointer, items, lambda b, p: getInt(b, p, 4))
                     print(name, data)
                 elif type == TAG_Float:
                     data, pointer = getList(buffer, pointer, items, getFloat)
@@ -145,12 +139,12 @@ def walktree(buffer: bytes):
                 break
             if tag == TAG_Int_Array:
                 items, pointer = getInt(buffer, pointer, 4)
-                data, pointer = getList(buffer, pointer, items, getInt, 4)
+                data, pointer = getList(buffer, pointer, items, lambda b, p: getInt(b, p, 4))
                 print(name, data)
                 break
             if tag == TAG_Long_Array:
                 items, pointer = getInt(buffer, pointer, 4)
-                data, pointer = getList(buffer, pointer, items, getInt, 8)
+                data, pointer = getList(buffer, pointer, items, lambda b, p: getInt(b, p, 8))
                 print(name, data)
                 break
 
