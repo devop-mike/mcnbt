@@ -68,17 +68,41 @@ def getList(buffer: bytes, pointer: int, items: int, func: callable):
     return data, pointer
 
 
-def walktree(buffer: bytes):
-    buffersize = len(buffer)
-    pointer = 0
-    while pointer < buffersize:
-        tag = buffer[pointer]
+def debugdata(buffer: bytes, pointer: int):
+    if pointer < 0:
+        pointer = 0
+    end = pointer + 32
+    asstring = buffer[pointer:end].hex(" ")
+    return f"({pointer:-5}):    {asstring}"
 
+
+def getListPayload(buffer: bytes, pointer: int, type: int, items: int):
+    func = lambda b, p: ("getListPayload", p)
+    if type == TAG_Int:
+        func = lambda b, p: getInt(b, p, 4)
+    if type == TAG_Long:
+        func = lambda b, p: getInt(b, p, 8)
+    if type == TAG_Float:
+        func = getFloat
+    if type == TAG_Double:
+        func = getDouble
+    if type == TAG_String:
+        func = getString
+    if type == TAG_Compound:
+        func = lambda b, p: ("getCompoundPayload", getCompoundPayload(b, p))
+
+    return getList(buffer, pointer, items, func)
+
+
+def getCompoundPayload(buffer: bytes, pointer: int):
+    tagcount = 0
+    while pointer < len(buffer):
+        tag = buffer[pointer]
+        tagcount += 1
         while True:
             if tag == TAG_End:
-                pointer += 1
-                # print("TAG_End")
-                break
+                # print(f"(TAG {tag}/{tagcount})", debugdata(buffer, pointer))
+                return pointer + 1
 
             name, pointer = getString(buffer, pointer + 1)
             if tag == TAG_Byte:
@@ -106,7 +130,9 @@ def walktree(buffer: bytes):
                 print(name, value)
                 break
             if tag == TAG_Byte_Array:
-                print(name)
+                items, pointer = getInt(buffer, pointer, 4)
+                data, pointer = getList(buffer, pointer, items, lambda b, p: getInt(b, p, 1))
+                print(name, data)
                 break
             if tag == TAG_String:
                 value, pointer = getString(buffer, pointer)
@@ -114,28 +140,13 @@ def walktree(buffer: bytes):
                 break
             if tag == TAG_List:
                 type = buffer[pointer]
-                pointer += 1
-                items, pointer = getInt(buffer, pointer, 4)
-                data = ""
-                if type == 0x00:
-                    print("TAG_List", type, name, data)
-                elif type == TAG_Int:
-                    data, pointer = getList(buffer, pointer, items, lambda b, p: getInt(b, p, 4))
-                    print(name, data)
-                elif type == TAG_Float:
-                    data, pointer = getList(buffer, pointer, items, getFloat)
-                    print(name, data)
-                elif type == TAG_Double:
-                    data, pointer = getList(buffer, pointer, items, getDouble)
-                    print(name, data)
-                elif type == TAG_String:
-                    data, pointer = getList(buffer, pointer, items, getString)
-                    print(name, data)
-                else:
-                    print("TAG_List", type, name, data)
+                items, pointer = getInt(buffer, pointer + 1, 4)
+                data, pointer = getListPayload(buffer, pointer, type, items)
+                print(name, data)
                 break
             if tag == TAG_Compound:
                 print(name)
+                pointer = getCompoundPayload(buffer, pointer)
                 break
             if tag == TAG_Int_Array:
                 items, pointer = getInt(buffer, pointer, 4)
@@ -148,8 +159,9 @@ def walktree(buffer: bytes):
                 print(name, data)
                 break
 
-            print("debug", pointer, buffer[pointer:pointer].hex(), buffer[pointer - 10 : pointer + 10].hex())
-            return
+            print("Unknown", tagcount)
+            break
+    return pointer
 
 
 def main():
@@ -160,9 +172,10 @@ def main():
 
         with gzip.open(filespec, "rb") as fd:
             buffer = fd.read()
-            print(fd.name, len(buffer), "bytes")
+            buffersize = len(buffer)
+            print(fd.name, buffersize, "bytes")
             fd.close()
-            walktree(buffer)
+            pointer = getCompoundPayload(buffer, 0)
             print()
 
 
